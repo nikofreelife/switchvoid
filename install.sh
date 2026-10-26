@@ -15,7 +15,14 @@ ROOTFS_URL="$REPO/releases/download/v1.0.0/void-switch-aarch64-rootfs.tar.zst"
 ROOTFS_NAME="void-switch-aarch64-rootfs.tar.zst"
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-  exec sudo -E bash "$0" "$@"
+  echo "Asking for administrator permission..."
+  exec sudo -E bash "$0" "$@" || {
+    echo "Could not get administrator permission." >&2
+    if [[ -t 0 ]]; then
+      read -r -p "Press Enter to close. " _
+    fi
+    exit 1
+  }
 fi
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -26,12 +33,19 @@ downloaded=0
 
 cleanup() {
   local rc=$?
-  rm -rf "$work/src" "$work/src.tar.gz"
+  rm -rf "$work/src" "$work/src.tar.gz" 2>/dev/null || true
   rmdir "$work" 2>/dev/null || true
   if [[ "$rc" -ne 0 && "$wiped" == 1 ]]; then
     echo "The Linux partition was erased before Void finished copying." >&2
     echo "Run this installer again. The downloaded archive is still in $here." >&2
   fi
+  if [[ "$rc" -ne 0 ]]; then
+    echo "Installer stopped before Void was installed (exit $rc)." >&2
+  fi
+  if [[ -t 0 ]]; then
+    read -r -p "Press Enter to close. " _
+  fi
+  exit "$rc"
 }
 trap cleanup EXIT
 
@@ -62,7 +76,7 @@ fi
 need zstd
 need mkfs.ext4
 need curl
-need ta
+need tar
 need lsblk
 need blkid
 
