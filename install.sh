@@ -58,11 +58,21 @@ else
 fi
 [[ -f "$sd/switchroot/void/uImage" && -f "$sd/switchroot/void/initramfs" ]]
 
-if [[ -f "$here/$ROOTFS_NAME" ]]; then
-  rootfs="$here/$ROOTFS_NAME"
+# /tmp on Fedora is a RAM disk and is too small for this archive.
+# curl error 23 (passed N returned M) is that disk filling up mid-write.
+rootfs="$here/$ROOTFS_NAME"
+if [[ -f "$rootfs" ]] && zstd -t "$rootfs" >/dev/null 2>&1; then
+  echo "Using existing $rootfs"
 else
-  rootfs="$work/$ROOTFS_NAME"
-  echo "Downloading the root filesystem (about 1.9 GB)..."
+  rm -f "$rootfs"
+  avail=$(df -B1 --output=avail "$here" | tail -1)
+  avail=${avail// /}
+  if (( avail < 2300000000 )); then
+    echo "Need 2.3 GB free in $here to download the root filesystem." >&2
+    echo "This folder has $((avail / 1024 / 1024)) MB free." >&2
+    exit 1
+  fi
+  echo "Downloading the root filesystem (about 1.9 GB) into $here ..."
   curl -fL --retry 3 -o "$rootfs" "$ROOTFS_URL"
 fi
 zstd -t "$rootfs"
