@@ -156,6 +156,7 @@ PKGS=(
   xterm
   openbox
   xinit
+  xsetroot
 )
 xbps_try xbps-install.static -r "$ROOTFS" -R https://repo-default.voidlinux.org/current -y "${PKGS[@]}"
 fi
@@ -496,12 +497,53 @@ EOF
 cat > "$ROOTFS/etc/skel/.xinitrc" << 'EOF'
 #!/bin/sh
 xrandr --output DSI-0 --mode 1280x720 --rotate normal 2>/dev/null || true
+xsetroot -solid '#1b2838' 2>/dev/null || true
+xterm -geometry 100x28+40+40 &
 exec openbox
 EOF
 chmod 755 "$ROOTFS/etc/skel/.xinitrc"
 if [[ -d "$ROOTFS/home/switch" ]]; then
   cp "$ROOTFS/etc/skel/.xinitrc" "$ROOTFS/home/switch/.xinitrc"
   chroot "$ROOTFS" chown switch:switch /home/switch/.xinitrc
+fi
+# Do not start X at all unless a Tegra display node exists. An empty X server
+# with AllowEmptyInitialConfiguration stays on a black screen.
+sed -i 's/AllowEmptyInitialConfiguration" "true"/AllowEmptyInitialConfiguration" "false"/' "$ROOTFS/etc/X11/xorg.conf"
+cat > "$ROOTFS/etc/issue" << 'EOF'
+switchvoid
+
+login switch / void
+If the desktop is blank, this console is still here.
+Other console: Ctrl+Alt+F2
+
+EOF
+if [[ -f "$ROOTFS/home/switch/.bash_profile" ]] && ! grep -q 'void-switch-desktop' "$ROOTFS/home/switch/.bash_profile"; then
+  cat >> "$ROOTFS/home/switch/.bash_profile" << 'EOF'
+
+# void-switch-desktop
+if [ -z "${DISPLAY:-}" ] && [ "$(tty)" = /dev/tty1 ]; then
+  i=0
+  gpu=
+  while [ "$i" -lt 40 ]; do
+    if [ -e /dev/nvhost-gpu ] || [ -e /dev/nvmap ] || [ -e /dev/dri/card0 ]; then
+      gpu=1
+      break
+    fi
+    sleep 0.5
+    i=$((i + 1))
+  done
+  if [ -z "$gpu" ]; then
+    echo "switchvoid: no display device. Staying on this console."
+    echo "login switch / void.  Run startx after the GPU is up."
+    echo "Other console: Ctrl+Alt+F2"
+  else
+    echo "switchvoid: starting the desktop. Blank screen: Ctrl+Alt+F2"
+    sleep 1
+    startx || echo "Desktop exited. You are on the console. Run startx."
+  fi
+fi
+EOF
+  chroot "$ROOTFS" chown switch:switch /home/switch/.bash_profile
 fi
 
 svdir="$ROOTFS/etc/runit/runsvdir/default"
